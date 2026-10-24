@@ -1,15 +1,14 @@
 {
   "expo": {
-    "name": "codesmith-launcher",
-    "slug": "codesmith-launcher",
+    "name": "CodeSmith",
+    "slug": "codesmith",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
     "android": {
+      "package": "com.codesmith.launcher",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -18,8 +17,6 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "plugins": ["./plugins/withLauncher"]
   }
 }
