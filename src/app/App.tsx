@@ -30,28 +30,31 @@ function HomeScreen() {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <View style={styles.headerRow}>
-          {route === 'drawer' ? (
+
+        {route === 'drawer' ? (
+          <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
               <Pressable onPress={() => setRoute('home')} style={styles.backButton}>
                 <Icon name="arrow-left" size={20} color={colors.subtext} />
               </Pressable>
               <Text style={styles.headerTitle}>App Drawer</Text>
             </View>
-          ) : (
-            <Text style={styles.clock}>09:41</Text>
-          )}
-          <View style={styles.headerRight}>
-            <View style={styles.statusIcons}>
-              <Icon name="signal" size={16} color={colors.subtext} />
-              <Icon name="wifi" size={16} color={colors.subtext} />
-              <Icon name="battery" size={18} color={colors.subtext} />
-            </View>
-            <View style={styles.avatar}>
-              <Icon name="person" size={18} color={colors.bg} />
+            <View style={styles.headerRight}>
+              <View style={styles.statusIcons}>
+                <Icon name="signal" size={16} color={colors.subtext} />
+                <Icon name="wifi" size={16} color={colors.subtext} />
+                <Icon name="battery" size={18} color={colors.subtext} />
+              </View>
+              <View style={styles.avatar}>
+                <Icon name="person" size={18} color={colors.bg} />
+              </View>
             </View>
           </View>
-        </View>
+          ) : (
+            // <Text style={styles.clock}>09:41</Text>
+            <></>
+          )}
+
       </View>
 
       {route === 'home' ? (
@@ -107,6 +110,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
+
         <StatusBar style="light" />
         <HomeScreen />
       </SafeAreaProvider>

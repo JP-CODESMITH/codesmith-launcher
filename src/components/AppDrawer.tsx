@@ -1,182 +1,181 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  AppState,
+  Image,
+  Pressable,
+  SectionList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-import Icon, { type IconName } from './Icon';
+import Icon from './Icon';
+import { ExpoAndroidAppList, type AndroidAppListPackage } from 'expo-android-app-list';
+import { openApplication } from 'expo-intent-launcher';
 import { colors, fontSizes, fonts, radius, spacing } from '../theme/tokens';
 
-type Trailing = 'arrow' | 'review' | 'check' | 'dot' | 'more';
-
-type DrawerApp = {
-  name: string;
-  meta: string;
-  icon: IconName;
-  iconColor: string;
-  trailing?: Trailing;
-  active?: boolean;
-  menu?: boolean;
+type AppSection = {
+  title: string;
+  data: AndroidAppListPackage[];
 };
-
-type Section = {
-  letter: string;
-  apps: DrawerApp[];
-};
-
-const sections: Section[] = [
-  {
-    letter: 'A',
-    apps: [
-      {
-        name: 'Android Studio',
-        meta: 'Developer Tools · 1.4 GB',
-        icon: 'terminal',
-        iconColor: colors.status.done,
-        trailing: 'arrow',
-      },
-      {
-        name: 'Anki Pro',
-        meta: 'Education · 42 cards due',
-        icon: 'school',
-        iconColor: colors.accent,
-        trailing: 'review',
-      },
-      {
-        name: 'Audible',
-        meta: 'Audiobooks · 3h left',
-        icon: 'headphones',
-        iconColor: colors.priority.P1,
-        trailing: 'arrow',
-      },
-    ],
-  },
-  {
-    letter: 'B',
-    apps: [
-      {
-        name: 'Bitwarden',
-        meta: 'Passwords · Locked',
-        icon: 'shield',
-        iconColor: colors.accent,
-        trailing: 'check',
-      },
-      {
-        name: 'Brave Browser',
-        meta: 'Browser · Shield Active',
-        icon: 'globe',
-        iconColor: colors.priority.P1,
-        trailing: 'arrow',
-      },
-    ],
-  },
-  {
-    letter: 'C',
-    apps: [
-      {
-        name: 'Calculator',
-        meta: 'Utilities · Programmer Mode',
-        icon: 'calculate',
-        iconColor: colors.subtext,
-        trailing: 'arrow',
-      },
-      {
-        name: 'Calendar',
-        meta: '10:30 AM · Team Sync',
-        icon: 'calendar-today',
-        iconColor: colors.accent,
-        trailing: 'more',
-        active: true,
-        menu: true,
-      },
-      {
-        name: 'Chrome',
-        meta: 'Browser · 8 tabs open',
-        icon: 'globe',
-        iconColor: colors.accentDim,
-        trailing: 'arrow',
-      },
-    ],
-  },
-  {
-    letter: 'G',
-    apps: [
-      {
-        name: 'GitHub',
-        meta: 'DevOps · 4 PRs pending',
-        icon: 'code',
-        iconColor: colors.text,
-        trailing: 'dot',
-      },
-      {
-        name: 'Gmail',
-        meta: 'Email · Work (1 unread)',
-        icon: 'mail',
-        iconColor: colors.status.missed,
-        trailing: 'arrow',
-      },
-    ],
-  },
-];
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
 
-function TrailingIcon({ kind }: { kind: Trailing }) {
-  switch (kind) {
-    case 'review':
-      return (
-        <View style={styles.reviewBadge}>
-          <Text style={styles.reviewText}>REVIEW</Text>
-        </View>
-      );
-    case 'check':
-      return <Icon name="check-circle" size={18} color={colors.status.done} />;
-    case 'dot':
-      return <View style={styles.onlineDot} />;
-    case 'more':
-      return <Icon name="more" size={20} color={colors.accent} />;
-    case 'arrow':
-      return <Icon name="arrow-right" size={18} color={colors.border} />;
+// Icons are expensive to generate, so keep them for the lifetime of the screen.
+const iconCache = new Map<string, string>();
+
+function groupApps(apps: AndroidAppListPackage[]): AppSection[] {
+  const groups = new Map<string, AndroidAppListPackage[]>();
+
+  for (const app of apps) {
+    const first = app.appName.trim().charAt(0).toUpperCase();
+    const letter = /[A-Z]/.test(first) ? first : '#';
+    const group = groups.get(letter) ?? [];
+    group.push(app);
+    groups.set(letter, group);
   }
+
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a === '#' ? 1 : b === '#' ? -1 : a.localeCompare(b)))
+    .map(([title, data]) => ({
+      title,
+      data: data.sort((a, b) => a.appName.localeCompare(b.appName)),
+    }));
 }
 
-function ContextMenu() {
+function AppRow({ app }: { app: AndroidAppListPackage }) {
+  const [icon, setIcon] = useState(() => iconCache.get(app.packageName));
+
+  useEffect(() => {
+    // The state initializer above already used the cache when it was warm.
+    if (iconCache.has(app.packageName)) return;
+
+    let alive = true;
+
+    ExpoAndroidAppList.getAppIcon(app.packageName)
+      .then((base64) => {
+        if (!base64) return;
+        iconCache.set(app.packageName, base64);
+        if (alive) setIcon(base64);
+      })
+      .catch(() => {
+        // Keep the placeholder icon if the app has no readable icon.
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [app.packageName]);
+
   return (
-    <View style={styles.menu}>
-      <View style={[styles.menuItem, styles.menuItemActive]}>
-        <View style={styles.menuItemLeft}>
-          <Icon name="pin" size={18} color={colors.accent} />
-          <Text style={styles.menuItemTextStrong}>Pin to home</Text>
+    <Pressable
+      onPress={() => {
+        try {
+          openApplication(app.packageName);
+        } catch {
+          // The package may not have a launcher activity.
+        }
+      }}
+      style={({ pressed }) => [styles.appRow, pressed && styles.appRowPressed]}
+    >
+      <View style={styles.appLeft}>
+        <View style={styles.appIcon}>
+          {icon ? (
+            <Image source={{ uri: `data:image/png;base64,${icon}` }} style={styles.appIconImage} />
+          ) : (
+            <Icon name="apps" size={22} color={colors.subtext} />
+          )}
         </View>
-        <Text style={styles.menuSlot}>SLOT 3</Text>
-      </View>
-      <View style={styles.menuItem}>
-        <View style={styles.menuItemLeft}>
-          <Icon name="info" size={18} color={colors.subtext} />
-          <Text style={styles.menuItemText}>App info</Text>
-        </View>
-        <Icon name="external" size={14} color={colors.subtext} />
-      </View>
-      <View style={styles.menuItem}>
-        <View style={styles.menuItemLeft}>
-          <Icon name="add-circle" size={18} color={colors.status.done} />
-          <Text style={styles.menuItemText}>New Event</Text>
+        <View style={styles.appText}>
+          <Text style={styles.appName} numberOfLines={1}>
+            {app.appName}
+          </Text>
+          <Text style={styles.appMeta} numberOfLines={1}>
+            {app.packageName}
+          </Text>
         </View>
       </View>
-      <View style={styles.menuDivider} />
-      <View style={styles.menuItem}>
-        <View style={styles.menuItemLeft}>
-          <Icon name="trash" size={18} color={colors.status.missed} />
-          <Text style={[styles.menuItemText, styles.menuItemDanger]}>Uninstall</Text>
-        </View>
-      </View>
-    </View>
+      <Icon name="arrow-right" size={18} color={colors.border} />
+    </Pressable>
   );
 }
 
 export default function AppDrawer() {
+  const [apps, setApps] = useState<AndroidAppListPackage[]>([]);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // Load once when the drawer opens, and again whenever reloadKey changes.
+  useEffect(() => {
+    let alive = true;
+
+    ExpoAndroidAppList.getAll()
+      .then((installed) => {
+        if (!alive) return;
+        setApps(
+          installed.filter(
+            (app) => app.appName.trim().length > 0 && app.packageName !== 'com.codesmith.launcher',
+          ),
+        );
+        setStatus('ready');
+        setError('');
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setStatus('error');
+        setError(e instanceof Error ? e.message : 'Could not load installed apps');
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [reloadKey]);
+
+  // Refresh when the launcher comes back to the front so new installs appear.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setReloadKey((key) => key + 1);
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  const sections = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    const filtered = search
+      ? apps.filter(
+          (app) =>
+            app.appName.toLowerCase().includes(search) ||
+            app.packageName.toLowerCase().includes(search),
+        )
+      : apps;
+
+    return groupApps(filtered);
+  }, [apps, query]);
+
+  const availableLetters = useMemo(
+    () => new Set(sections.map((section) => section.title)),
+    [sections],
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.searchBar}>
         <View style={styles.searchLeft}>
           <Icon name="search" size={18} color={colors.subtext} />
-          <Text style={styles.searchPlaceholder}>Search apps or commands...</Text>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search apps or commands..."
+            placeholderTextColor={colors.subtext}
+            style={styles.searchInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
         </View>
         <View style={styles.searchRight}>
           <View style={styles.shortcut}>
@@ -187,54 +186,63 @@ export default function AppDrawer() {
       </View>
 
       <View style={styles.body}>
-        <ScrollView
+        <SectionList<AndroidAppListPackage, AppSection>
+          sections={sections}
+          keyExtractor={(item) => item.packageName}
+          renderItem={({ item }) => <AppRow app={item} />}
+          renderSectionHeader={({ section }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLetter}>{section.title}</Text>
+              <View style={styles.sectionRule} />
+              <Text style={styles.sectionCount}>{section.data.length} APPS</Text>
+            </View>
+          )}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-        >
-          {sections.map((section) => (
-            <View key={section.letter} style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionLetter}>{section.letter}</Text>
-                <View style={styles.sectionRule} />
-                <Text style={styles.sectionCount}>{section.apps.length} APPS</Text>
+          stickySectionHeadersEnabled={false}
+          initialNumToRender={12}
+          windowSize={5}
+          removeClippedSubviews
+          ListEmptyComponent={
+            status === 'loading' ? (
+              <View style={styles.state}>
+                <ActivityIndicator color={colors.accent} />
+                <Text style={styles.stateText}>Indexing installed apps...</Text>
               </View>
-
-              <View style={styles.sectionApps}>
-                {section.apps.map((app) => (
-                  <View key={app.name}>
-                    <View style={[styles.appRow, app.active && styles.appRowActive]}>
-                      <View style={styles.appLeft}>
-                        <View style={styles.appIcon}>
-                          <Icon name={app.icon} size={24} color={app.iconColor} />
-                        </View>
-                        <View style={styles.appText}>
-                          <Text style={styles.appName} numberOfLines={1}>
-                            {app.name}
-                          </Text>
-                          <Text
-                            style={[styles.appMeta, app.active && styles.appMetaActive]}
-                            numberOfLines={1}
-                          >
-                            {app.meta}
-                          </Text>
-                        </View>
-                      </View>
-                      {app.trailing ? <TrailingIcon kind={app.trailing} /> : null}
-                    </View>
-                    {app.menu ? <ContextMenu /> : null}
-                  </View>
-                ))}
+            ) : status === 'error' ? (
+              <View style={styles.state}>
+                <Icon name="info" size={22} color={colors.status.missed} />
+                <Text style={styles.stateText}>{error}</Text>
+                <Pressable
+                  onPress={() => {
+                    setStatus('loading');
+                    setReloadKey((key) => key + 1);
+                  }}
+                  style={styles.retryButton}
+                >
+                  <Text style={styles.retryText}>Retry</Text>
+                </Pressable>
               </View>
-            </View>
-          ))}
-        </ScrollView>
+            ) : (
+              <View style={styles.state}>
+                <Icon name="search" size={22} color={colors.subtext} />
+                <Text style={styles.stateText}>
+                  {query.trim() ? `No apps match “${query.trim()}”` : 'No apps installed'}
+                </Text>
+              </View>
+            )
+          }
+        />
 
         <View style={styles.alphabetRail}>
           {alphabet.map((letter) => (
             <Text
               key={letter}
-              style={[styles.alphabetLetter, letter === 'C' && styles.alphabetLetterActive]}
+              style={[
+                styles.alphabetLetter,
+                availableLetters.has(letter) && styles.alphabetLetterPresent,
+              ]}
             >
               {letter}
             </Text>
@@ -245,7 +253,7 @@ export default function AppDrawer() {
       <View style={styles.footer}>
         <View style={styles.footerLeft}>
           <View style={styles.liveDot} />
-          <Text style={styles.footerText}>72 APPS INDEXED</Text>
+          <Text style={styles.footerText}>{apps.length} APPS INDEXED</Text>
         </View>
         <View style={styles.footerRight}>
           <Text style={styles.footerText}>DRAWER READY</Text>
@@ -281,10 +289,12 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  searchPlaceholder: {
+  searchInput: {
+    flex: 1,
+    padding: 0,
     fontSize: fontSizes.bodyMd,
     lineHeight: 20,
-    color: colors.subtext,
+    color: colors.text,
   },
   searchRight: {
     flexDirection: 'row',
@@ -314,16 +324,15 @@ const styles = StyleSheet.create({
     paddingRight: spacing.xl,
   },
   listContent: {
-    gap: spacing.md,
-  },
-  section: {
     gap: spacing.xs,
+    paddingBottom: spacing.md,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     paddingHorizontal: 4,
+    paddingTop: spacing.sm,
   },
   sectionLetter: {
     fontFamily: fonts.mono,
@@ -343,9 +352,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: colors.subtext,
   },
-  sectionApps: {
-    gap: spacing.xs,
-  },
   appRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -354,7 +360,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     backgroundColor: colors.surfaceContainer,
   },
-  appRowActive: {
+  appRowPressed: {
     backgroundColor: colors.surfaceHigh,
   },
   appLeft: {
@@ -371,6 +377,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHighest,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  appIconImage: {
+    width: 32,
+    height: 32,
   },
   appText: {
     flex: 1,
@@ -383,86 +394,34 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   appMeta: {
-    fontSize: fontSizes.bodySm,
-    lineHeight: 16,
-    color: colors.subtext,
-  },
-  appMetaActive: {
-    color: colors.accent,
-  },
-  reviewBadge: {
-    backgroundColor: `${colors.accent}1A`,
-    borderRadius: radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginRight: spacing.xs,
-  },
-  reviewText: {
-    fontFamily: fonts.mono,
-    fontSize: fontSizes.labelBadge,
-    lineHeight: 14,
-    fontWeight: '600',
-    color: colors.accent,
-  },
-  onlineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.full,
-    backgroundColor: colors.status.done,
-    marginRight: spacing.sm,
-  },
-  menu: {
-    marginLeft: spacing.xl,
-    marginTop: 6,
-    marginBottom: spacing.xs,
-    width: 208,
-    backgroundColor: colors.surfaceHigh,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: 6,
-    gap: 2,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-  },
-  menuItemActive: {
-    backgroundColor: colors.surfaceHighest,
-  },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  menuItemText: {
-    fontSize: fontSizes.bodyMd,
-    lineHeight: 20,
-    color: colors.subtext,
-  },
-  menuItemTextStrong: {
-    fontSize: fontSizes.bodyMd,
-    lineHeight: 20,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  menuItemDanger: {
-    color: colors.status.missed,
-  },
-  menuSlot: {
     fontFamily: fonts.mono,
     fontSize: 10,
     lineHeight: 14,
     color: colors.subtext,
   },
-  menuDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.surfaceHighest,
-    marginVertical: 2,
+  state: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  stateText: {
+    fontSize: fontSizes.bodyMd,
+    lineHeight: 20,
+    textAlign: 'center',
+    color: colors.subtext,
+  },
+  retryButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceHigh,
+  },
+  retryText: {
+    fontFamily: fonts.mono,
+    fontSize: fontSizes.labelCode,
+    fontWeight: '600',
+    color: colors.accent,
   },
   alphabetRail: {
     position: 'absolute',
@@ -478,10 +437,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 8,
     lineHeight: 9,
-    color: colors.subtext,
+    color: colors.border,
   },
-  alphabetLetterActive: {
-    color: colors.accent,
+  alphabetLetterPresent: {
+    color: colors.subtext,
     fontWeight: '700',
   },
   footer: {
